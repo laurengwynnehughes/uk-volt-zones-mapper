@@ -1,8 +1,9 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin } from 'lucide-react';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 
 interface BatteryAsset {
   id: string;
@@ -27,6 +28,9 @@ interface Zone {
 const UKEVMap = () => {
   const [selectedAsset, setSelectedAsset] = useState<BatteryAsset | null>(null);
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const [mapboxToken, setMapboxToken] = useState<string>('');
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
 
   // Mock data for UK EV battery assets
   const batteryAssets: BatteryAsset[] = [
@@ -73,6 +77,48 @@ const UKEVMap = () => {
   const totalCapacity = batteryAssets.reduce((sum, asset) => sum + asset.capacity, 0);
   const avgPrice = pricingZones.reduce((sum, zone) => sum + zone.price, 0) / pricingZones.length;
 
+  useEffect(() => {
+    if (!mapContainer.current || !mapboxToken) return;
+
+    // Initialize Mapbox map
+    mapboxgl.accessToken = mapboxToken;
+    
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: [-2.5, 54.5], // Center on UK
+      zoom: 5.5,
+      projection: 'mercator'
+    });
+
+    // Add navigation controls
+    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+    // Add battery assets as markers
+    batteryAssets.forEach((asset) => {
+      if (!map.current) return;
+
+      // Create custom marker element
+      const markerElement = document.createElement('div');
+      markerElement.className = `cursor-pointer ${getVoltageSize(asset.voltage)} ${getStatusColor(asset.status)} rounded-full border-2 border-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center`;
+      markerElement.innerHTML = `<span class="text-white text-xs font-bold">${asset.voltage}kV</span>`;
+      
+      markerElement.addEventListener('click', () => {
+        setSelectedAsset(asset);
+      });
+
+      // Add marker to map
+      new mapboxgl.Marker(markerElement)
+        .setLngLat([asset.lng, asset.lat])
+        .addTo(map.current!);
+    });
+
+    // Cleanup
+    return () => {
+      map.current?.remove();
+    };
+  }, [mapboxToken]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -82,6 +128,27 @@ const UKEVMap = () => {
           <p className="text-xl text-gray-600">Voltage Capacity & Zonal Pricing Overview</p>
           <p className="text-sm text-gray-500">Source: FTI Consulting & Energy Systems Catapult</p>
         </div>
+
+        {/* Mapbox Token Input */}
+        {!mapboxToken && (
+          <Card className="max-w-md mx-auto">
+            <CardHeader>
+              <CardTitle>Setup Required</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-600 mb-4">
+                Please enter your Mapbox public token to display the interactive map. 
+                Get your token at <a href="https://mapbox.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">mapbox.com</a>
+              </p>
+              <input
+                type="text"
+                placeholder="Enter Mapbox public token..."
+                className="w-full p-2 border rounded"
+                onChange={(e) => setMapboxToken(e.target.value)}
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -122,53 +189,11 @@ const UKEVMap = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 h-full">
-                <div className="relative w-full h-full bg-gradient-to-br from-blue-100 to-green-100 rounded-lg overflow-hidden">
-                  {/* UK Map Outline */}
-                  <svg viewBox="0 0 400 500" className="absolute inset-0 w-full h-full">
-                    {/* Simplified UK outline */}
-                    <path
-                      d="M200 50 L220 60 L240 80 L250 120 L260 160 L270 200 L280 240 L285 280 L290 320 L285 360 L275 400 L260 430 L240 450 L200 460 L160 450 L140 430 L125 400 L115 360 L120 320 L125 280 L130 240 L140 200 L150 160 L160 120 L170 80 L190 60 Z"
-                      fill="rgba(255,255,255,0.8)"
-                      stroke="#94a3b8"
-                      strokeWidth="2"
-                    />
-                    
-                    {/* Pricing zone overlays */}
-                    {pricingZones.map((zone) => (
-                      <circle
-                        key={zone.id}
-                        cx={Math.random() * 300 + 50}
-                        cy={Math.random() * 400 + 50}
-                        r="30"
-                        fill={zone.color}
-                        opacity="0.3"
-                        className="cursor-pointer hover:opacity-50 transition-opacity"
-                        onClick={() => setSelectedZone(zone.id)}
-                      />
-                    ))}
-                  </svg>
-
-                  {/* Battery Assets */}
-                  {batteryAssets.map((asset, index) => (
-                    <div
-                      key={asset.id}
-                      className={`absolute cursor-pointer transform -translate-x-1/2 -translate-y-1/2 
-                        ${getVoltageSize(asset.voltage)} ${getStatusColor(asset.status)} 
-                        rounded-full border-2 border-white shadow-lg hover:scale-110 transition-transform`}
-                      style={{
-                        left: `${(index % 3) * 30 + 25}%`,
-                        top: `${Math.floor(index / 3) * 15 + 20}%`
-                      }}
-                      onClick={() => setSelectedAsset(asset)}
-                    >
-                      <div className="w-full h-full rounded-full flex items-center justify-center">
-                        <span className="text-white text-xs font-bold">
-                          {asset.voltage}kV
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <div 
+                  ref={mapContainer} 
+                  className="w-full h-full rounded-lg"
+                  style={{ minHeight: '400px' }}
+                />
               </CardContent>
             </Card>
           </div>
